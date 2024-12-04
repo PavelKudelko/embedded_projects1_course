@@ -1,40 +1,33 @@
 #include <Wire.h>
 #include <LiquidCrystal.h>
+
 LiquidCrystal lcd(37, 36, 35, 34, 33, 32);
+// compass address
 const int ADDRESS = 0x60;
+// offset for compass
 const int OFFSET = 2;
+// joystick pins
 const int joyX = A8;
 const int joyY = A9;
 const int joyButton = 19;
+// pulse count per cm (found by experiments)
+const int PULSE_AVG = 13.2;
 
 #define JOYSTICK_MODE 0
 #define SERIAL_MODE 1
+// encoder pins for pulse counting
+#define ENCA_R 2 
+#define ENCA_L 3
 
 volatile int controlMode = SERIAL_MODE;
-
-const int STOP_TIME = 3000;
-const int PULSE_AVG = 13.2;
-
 volatile int pulseCountR = 0;
 volatile int pulseCountL = 0;
 unsigned long startTime = 0;
-
-#define ENCA_R 2 
-#define ENCA_L 3 
-
-void encoderISR() {
-  pulseCountR++;
-}
-
-void encoderISRleft() {
-  pulseCountL++;
-}
-
-
 volatile bool stop_motors = false;
 volatile bool buttonPressed = false;
 unsigned long lastDebounceTime = 0;
-const unsigned long debounceDelay = 100;
+const int DEBOUNCE = 100;
+// motors
 #define Motor_forward         1
 #define Motor_return         0
 #define Motor_L_dir_pin      7
@@ -46,23 +39,29 @@ const int X_CENTER = 500;   // Center value for X-axis
 const int Y_CENTER = 487;   // Center value for Y-axis
 const int DEADZONE = 20;    // Threshold to ignore small joystick movements
 
+void encoderISR() {
+  pulseCountR++;
+}
+
+void encoderISRleft() {
+  pulseCountL++;
+}
+
 void setup() {
+  // delay for stability (mostly for compass)
   delay(2000);
-  
   Serial.begin(9600);
-  Serial.println("Write something to the serial monitor.");
   pinMode(ENCA_R, INPUT);
   pinMode(ENCA_L, INPUT);
-
+  // motors setup
   pinMode(Motor_L_dir_pin, OUTPUT);
   pinMode(Motor_R_dir_pin, OUTPUT);
   pinMode(Motor_L_pwm_pin, OUTPUT);
   pinMode(Motor_R_pwm_pin, OUTPUT);
-
+  // ISR functions (pulse count for L and R and joy button)
   attachInterrupt(digitalPinToInterrupt(ENCA_R), encoderISR, RISING);
   attachInterrupt(digitalPinToInterrupt(ENCA_L), encoderISRleft, RISING);
   attachInterrupt(digitalPinToInterrupt(joyButton), buttonISR, FALLING);
-
   pinMode(joyButton, INPUT_PULLUP);
 
   lcd.begin(20, 4);
@@ -70,20 +69,17 @@ void setup() {
 }
 
 void buttonISR() {
-
+  // reset pulse count
   pulseCountR = 0;
   pulseCountL = 0;
-    static unsigned long lastDebounceTime = 0;
-    unsigned long currentTime = millis();
-    if (currentTime - lastDebounceTime > debounceDelay) {
-        controlMode = (controlMode == JOYSTICK_MODE) ? SERIAL_MODE : JOYSTICK_MODE;
-        lastDebounceTime = currentTime;
-        Serial.println("ISR triggered.");
-        Serial.print("Control mode: ");
-        Serial.println(controlMode == JOYSTICK_MODE ? "Joystick" : "Serial");
-    }
+  // handle button bouncing
+  static unsigned long lastDebounceTime = 0;
+  unsigned long currentTime = millis();
+  if (currentTime - lastDebounceTime > DEBOUNCE) {
+    controlMode = (controlMode == JOYSTICK_MODE) ? SERIAL_MODE : JOYSTICK_MODE;
+    lastDebounceTime = currentTime;
+  }
 }
-
 
 void loop() {
   if (controlMode == JOYSTICK_MODE) {
@@ -93,33 +89,40 @@ void loop() {
   }
   delay(100);  // Add a short delay for stability
 }
-
+// Commands handling part
+// that are recieved from esp in serial monitor
 void handleSerialControl() {
-
+  // lcd controll
   lcd.clear();
   lcd.setCursor(0, 0);
   float compassBearingDegrees = (readCompassBearing() * 360.0) / 255.0;
   displayCompassInfo(compassBearingDegrees);
   displayPulseInfo();
-
+  lcd.setCursor(0, 3);
+  lcd.print("Serial");
+  // Check if there is incoming data from the serial monitor
   if (Serial.available() > 0) {
+    // Read the incoming message
     String message = Serial.readStringUntil('\n');
     Serial.print("Message received, content: ");
     Serial.println(message);
-
+    // Find the positions of the command keywords in the message
     int pos_lcd = message.indexOf("LCD");
     int pos_drive_dist = message.indexOf("Move");
     int pos_turn = message.indexOf("Turn");
     int pos_find_north = message.indexOf("find");
-
+    // Handle LCD message commands
+    // In not used in the esp
     if (pos_lcd > -1) {
       Serial.println("Command = LCD ");
       pos_lcd = message.indexOf(":");
-      String stat = message.substring(pos_lcd + 1);
+      String stat = message.substring(pos_lcd + 1); // Extract message
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print(stat);
-    } else if (pos_drive_dist > -1) {
+    }
+    // Handle Move command
+    else if (pos_drive_dist > -1) {
       Serial.println("Command = Move ");
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -127,6 +130,7 @@ void handleSerialControl() {
       pos_drive_dist = message.indexOf(":");
 
       if (pos_drive_dist > -1) {
+        // Extract the distance
         String stat = message.substring(pos_drive_dist + 1);
         int stat_int = stat.toInt();
 
@@ -138,7 +142,13 @@ void handleSerialControl() {
           lcd.print("Error: invalid value");
         }
       }
-    } else if (pos_turn > -1) {
+      else {
+        lcd.setCursor(0, 1);
+        lcd.print("Error: missing value");
+      }
+    } 
+    // Handle Turn command
+    else if (pos_turn > -1) {
       Serial.print("Command = Turn ");
       lcd.clear();
       lcd.setCursor(0, 0);
@@ -146,11 +156,18 @@ void handleSerialControl() {
       pos_turn = message.indexOf(":");
 
       if (pos_turn > -1) {
-        String stat = message.substring(pos_turn + 1);
+        String stat = message.substring(pos_turn + 1); // Extract the angle
+        // angle str to int convert
         int stat_int = stat.toInt();
+        // Since it's a slide bar on the web page (0 to 360)
+        // validating angle and error handling is not needed here
         lcd.print(stat_int);
         turnExact(stat_int);
+      } else {
+        lcd.setCursor(0, 1);
+        lcd.print("Error: missing angle");
       }
+    // Handle find North command
     } else if (pos_find_north > -1) {
       Serial.print("Command = find ");
       lcd.clear();
@@ -161,15 +178,16 @@ void handleSerialControl() {
       if (pos_find_north > -1) {
         String stat = message.substring(pos_turn + 1);
         lcd.print(stat);
-        find_heading(0);  // 0 degrees is North
+        find_heading(0);  // Find the heading to 0 degrees (North)
       }
-    } else {
-      Serial.println("error");
-      lcd.print("error");
+    }
+    // Handle invalid or unrecognized commands
+    else {
+      lcd.setCursor(0, 0);
+      lcd.print("Error: unknown cmd");
     }
   }
 }
-
 void handleJoystickControl() {
   // Joystick control logic (your existing joystick implementation)
   int xValue = analogRead(joyX);
@@ -193,22 +211,12 @@ void handleJoystickControl() {
   // Set motor speeds (absolute value for PWM)
   analogWrite(Motor_L_pwm_pin, abs(motorSpeedL));
   analogWrite(Motor_R_pwm_pin, abs(motorSpeedR));
-  
-  // Display joystick values on LCD
-  float xVoltage = (xValue / 1023.0) * 5.0;
-  float yVoltage = (yValue / 1023.0) * 5.0;
-
+  // lcd prints
   float compassBearingDegrees = (readCompassBearing() * 360.0) / 255.0;
   displayCompassInfo(compassBearingDegrees);
   displayPulseInfo();
-
-  // Joystick voltage
   lcd.setCursor(0, 3);
-  lcd.print("X:");
-  lcd.print((xValue / 1023.0) * 5.0, 2);
-  lcd.print("V Y:");
-  lcd.print((yValue / 1023.0) * 5.0, 2);
-  lcd.print("V");
+  lcd.print("JoyStick");
 }
 
 void displayCompassInfo(float compassBearingDegrees) {
@@ -219,7 +227,7 @@ void displayCompassInfo(float compassBearingDegrees) {
   lcd.print((char)223); // Degree symbol
   
   lcd.setCursor(0, 1);
-  lcd.print("Dir: ");
+  lcd.print("Direction: ");
   lcd.print(getDirection(compassBearingDegrees));
 }
 
@@ -243,24 +251,6 @@ void displayPulseInfo() {
   lcd.print(pulseCountL);
 }
 
-
-void leftWheelForward(int speedPercentage, int duration) {
-  int pwmValue = map(speedPercentage, 0, 100, 0, 255);
-  digitalWrite(Motor_L_dir_pin, Motor_forward);
-  analogWrite(Motor_L_pwm_pin, pwmValue);
-  delay(duration);
-  analogWrite(Motor_L_pwm_pin, 0);
-}
-
-
-void rightWheelForward(int speedPercentage, int duration) {
-  int pwmValue = map(speedPercentage, 0, 100, 0, 255);
-  digitalWrite(Motor_R_dir_pin, Motor_forward);
-  analogWrite(Motor_R_pwm_pin, pwmValue);
-  delay(duration);
-  analogWrite(Motor_R_pwm_pin, 0);
-}
-
 void turnExact(int angle) {
   if (angle == 0) return;  // No turn needed
   
@@ -269,9 +259,6 @@ void turnExact(int angle) {
   float lastHeading = startHeading;
   float currentHeading;
   float accumulatedAngle = 0;  // Track total angle turned
-  
-  Serial.print("Start heading: "); Serial.println(startHeading);
-  Serial.print("Target angle: "); Serial.println(angle);
 
   // Determine direction and target angle
   bool isRightTurn = (angle > 0);
@@ -308,14 +295,8 @@ void turnExact(int angle) {
     } else {
       turnLeft(25);
     }
-    
-    // Debug output
-    Serial.print("Current: "); Serial.print(currentHeading);
-    Serial.print(" Accumulated: "); Serial.println(abs(accumulatedAngle));
-    
     delay(50);  // Small delay for stability
-  }
-  
+  }  
   stopMotors();
   Serial.println("Turn completed!");
 }
@@ -325,7 +306,6 @@ void find_heading(int targetBearing) {
 
   while (true) {
     currentHeading = (readCompassBearing() * 360.0) / 255;
-
     // Calculate shortest angle difference
     float angleDifference = currentHeading - targetBearing;
     if (angleDifference > 180) angleDifference -= 360;
@@ -333,10 +313,8 @@ void find_heading(int targetBearing) {
 
     if (abs(angleDifference) <= OFFSET) {
       stopMotors();
-      Serial.println("Reached target heading.");
       break;
     }
-
     // Turn in the direction of shortest path
     if (angleDifference > 0) {
       turnLeft(25);
@@ -388,14 +366,11 @@ void driveDistance(int cm, int speedPercent) {
     digitalWrite(Motor_L_dir_pin, Motor_return);
     digitalWrite(Motor_R_dir_pin, Motor_return);
   }
-  
   analogWrite(Motor_L_pwm_pin, pwmValue);
   analogWrite(Motor_R_pwm_pin, pwmValue);
-
   while (pulseCountR < targetPulses) {
     // waiting to reach the target distance
   }
-
   stopMotors();
 }
 
