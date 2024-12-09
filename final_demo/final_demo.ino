@@ -26,7 +26,7 @@ unsigned long startTime = 0;
 volatile bool stop_motors = false;
 volatile bool buttonPressed = false;
 unsigned long lastDebounceTime = 0;
-const int DEBOUNCE = 100;
+const int DEBOUNCE = 200;
 // motors
 #define Motor_forward         1
 #define Motor_return         0
@@ -38,6 +38,8 @@ const int DEBOUNCE = 100;
 const int X_CENTER = 500;   // Center value for X-axis
 const int Y_CENTER = 487;   // Center value for Y-axis
 const int DEADZONE = 20;    // Threshold to ignore small joystick movements
+// offset for getting real values
+volatile int COMPASS_READING_OFFSET = 0;
 
 void encoderISR() {
   pulseCountR++;
@@ -45,6 +47,43 @@ void encoderISR() {
 
 void encoderISRleft() {
   pulseCountL++;
+}
+// compas reading handling
+uint8_t readCompassBearing() {
+  Wire.beginTransmission(ADDRESS); 
+  Wire.write(0x01);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(ADDRESS, 1, true);
+  if (Wire.available()) {
+    return Wire.read(); 
+  }
+  // If connection fails, return 0
+  return 0; 
+}
+
+// Calibrate compass
+void calibrateCompass() {
+  uint8_t initVal = readCompassBearing();
+  if (initVal <= 127) {
+    COMPASS_READING_OFFSET = -initVal; // Offset for values closer to 0
+  } else {
+    COMPASS_READING_OFFSET = 255 - initVal; // Offset for values closer to 255
+  }
+  Serial.print("Compass Calibration Offset: ");
+  Serial.println(COMPASS_READING_OFFSET);
+}
+
+// Get corrected compass bearing in degrees
+int getCorrectedCompassBearing() {
+  int rawBearing = readCompassBearing();
+  int correctedRaw = (rawBearing + COMPASS_READING_OFFSET) % 255; // Apply offset in 0–255 range
+  if (correctedRaw < 0) {
+    correctedRaw += 255; // Ensure value is non-negative
+  }
+  // Convert to degrees
+  float correctedDegrees = (correctedRaw * 360.0) / 255.0;
+  return static_cast<int>(correctedDegrees); // Return as integer
 }
 
 void setup() {
@@ -66,6 +105,8 @@ void setup() {
 
   lcd.begin(20, 4);
   Wire.begin();
+  // Compass calibration
+  calibrateCompass();
 }
 
 void buttonISR() {
@@ -91,15 +132,16 @@ void loop() {
 }
 // Commands handling part
 // that are recieved from esp in serial monitor
+
 void handleSerialControl() {
   // lcd controll
   lcd.clear();
   lcd.setCursor(0, 0);
-  float compassBearingDegrees = (readCompassBearing() * 360.0) / 255.0;
-  displayCompassInfo(compassBearingDegrees);
+  displayCompassInfo();
   displayPulseInfo();
   lcd.setCursor(0, 3);
-  lcd.print("Serial");
+  lcd.print("ESP");
+  
   // Check if there is incoming data from the serial monitor
   if (Serial.available() > 0) {
     // Read the incoming message
@@ -133,8 +175,8 @@ void handleSerialControl() {
         // Extract the distance
         String stat = message.substring(pos_drive_dist + 1);
         int stat_int = stat.toInt();
-
-        if (stat_int <= 20 && stat_int >= -20) {
+        // some error handling
+        if (stat_int <= 51 && stat_int >= -51) {
           lcd.print(stat_int);
           driveDistance(stat_int, 100);
         } else {
@@ -169,14 +211,14 @@ void handleSerialControl() {
       }
     // Handle find North command
     } else if (pos_find_north > -1) {
-      Serial.print("Command = find ");
+      Serial.print("Command = Find");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Command = find ");
+      lcd.print("Command = Find");
       pos_find_north = message.indexOf(":");
 
       if (pos_find_north > -1) {
-        String stat = message.substring(pos_turn + 1);
+        String stat = message.substring(pos_find_north + 1);
         lcd.print(stat);
         find_heading(0);  // Find the heading to 0 degrees (North)
       }
@@ -212,22 +254,20 @@ void handleJoystickControl() {
   analogWrite(Motor_L_pwm_pin, abs(motorSpeedL));
   analogWrite(Motor_R_pwm_pin, abs(motorSpeedR));
   // lcd prints
-  float compassBearingDegrees = (readCompassBearing() * 360.0) / 255.0;
-  displayCompassInfo(compassBearingDegrees);
+  displayCompassInfo();
   displayPulseInfo();
   lcd.setCursor(0, 3);
   lcd.print("JoyStick");
 }
 
-void displayCompassInfo(float compassBearingDegrees) {
+void displayCompassInfo() {
+  int compassBearingDegrees = getCorrectedCompassBearing();
   lcd.clear();
   lcd.setCursor(0, 0);
-  lcd.print("Degrees: ");
+  lcd.print("Deg: ");
   lcd.print(compassBearingDegrees);
   lcd.print((char)223); // Degree symbol
-  
-  lcd.setCursor(0, 1);
-  lcd.print("Direction: ");
+  lcd.print(" Dir: ");
   lcd.print(getDirection(compassBearingDegrees));
 }
 
@@ -243,69 +283,76 @@ String getDirection(float degrees) {
   return "Unknown";
 }
 
+// print pulses and distance
 void displayPulseInfo() {
-  lcd.setCursor(0, 2);
-  lcd.print("Pulses: R:"); 
+  lcd.setCursor(0, 1);
+  lcd.print("Plss: R:"); 
   lcd.print(pulseCountR); 
   lcd.print(" L:"); 
   lcd.print(pulseCountL);
+  lcd.setCursor(0, 2);
+  lcd.print("Dist: ");
+  float distR = pulseCountR / PULSE_AVG;
+  float distL = pulseCountL / PULSE_AVG;
+  lcd.print("R:");
+  lcd.print((int)distR);
+  lcd.print(" L:");
+  lcd.print((int)distL);
+  lcd.print(" cm");
 }
 
 void turnExact(int angle) {
   if (angle == 0) return;  // No turn needed
-  
-  uint8_t initialBearing = readCompassBearing(); 
-  float startHeading = (initialBearing * 360.0) / 255;
-  float lastHeading = startHeading;
-  float currentHeading;
-  float accumulatedAngle = 0;  // Track total angle turned
-
+  int startHeading = getCorrectedCompassBearing();
+  int currentHeading = startHeading;
+  int accumulatedAngle = 0;
   // Determine direction and target angle
   bool isRightTurn = (angle > 0);
-  float targetAngle = abs(angle);
+  int targetAngle = abs(angle);
 
-  while (abs(accumulatedAngle) < targetAngle) {
-    currentHeading = (readCompassBearing() * 360.0) / 255;
+  // Loop until the accumulated angle reaches the target angle
+  while (accumulatedAngle < targetAngle) {
+    int newHeading = getCorrectedCompassBearing();
     
-    // Calculate the difference since last reading
-    float deltaAngle = currentHeading - lastHeading;
+    // Calculate the delta angle
+    int deltaAngle = newHeading - currentHeading;
     
-    // Handle wrap-around cases
-    if (isRightTurn) {
-      if (deltaAngle < -180) {  // Wrapped from 359 to 0
-        deltaAngle += 360;
-      } else if (deltaAngle > 180) {  // Wrong direction
-        deltaAngle -= 360;
-      }
-    } else {  // Turning left
-      if (deltaAngle > 180) {  // Wrapped from 0 to 359
-        deltaAngle -= 360;
-      } else if (deltaAngle < -180) {  // Wrong direction
-        deltaAngle += 360;
-      }
+    // Handle wrap-around for compass values
+    if (deltaAngle > 180) {
+      deltaAngle -= 360;
+    } else if (deltaAngle < -180) {
+      deltaAngle += 360;
     }
     
-    // Accumulate the angle turned
-    accumulatedAngle += deltaAngle;
-    lastHeading = currentHeading;
+    // Add the delta angle to the accumulated angle
+    if (isRightTurn) {
+      if (deltaAngle > 0) {
+        accumulatedAngle += deltaAngle;
+      }
+    } else {
+      if (deltaAngle < 0) {
+        accumulatedAngle -= deltaAngle;
+      }
+    }
+    currentHeading = newHeading;
 
     // Turn in the specified direction
     if (isRightTurn) {
-      turnRight(25);
+      turnRight(25); 
     } else {
       turnLeft(25);
     }
+
     delay(50);  // Small delay for stability
-  }  
+  }
   stopMotors();
-  Serial.println("Turn completed!");
 }
 
 void find_heading(int targetBearing) {
-  float currentHeading;
+  int currentHeading;
 
   while (true) {
-    currentHeading = (readCompassBearing() * 360.0) / 255;
+    currentHeading = getCorrectedCompassBearing();
     // Calculate shortest angle difference
     float angleDifference = currentHeading - targetBearing;
     if (angleDifference > 180) angleDifference -= 360;
@@ -339,18 +386,6 @@ void turnRight(int speedPercent) {
   digitalWrite(Motor_L_dir_pin, Motor_return);
   analogWrite(Motor_L_pwm_pin, pwmValue);
   analogWrite(Motor_R_pwm_pin, pwmValue);
-}
-
-uint8_t readCompassBearing() {
-  Wire.beginTransmission(ADDRESS); 
-  Wire.write(0x01);
-  Wire.endTransmission(false);
-  
-  Wire.requestFrom(ADDRESS, 1, true);
-  if (Wire.available()) {
-    return Wire.read(); 
-  }
-  return 0; 
 }
 
 void driveDistance(int cm, int speedPercent) {
