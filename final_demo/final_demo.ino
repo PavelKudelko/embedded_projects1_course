@@ -40,6 +40,8 @@ const int Y_CENTER = 487;   // Center value for Y-axis
 const int DEADZONE = 20;    // Threshold to ignore small joystick movements
 // offset for getting real values
 volatile int COMPASS_READING_OFFSET = 0;
+// str for displaying last executed command
+String lastCmd = "";
 
 void encoderISR() {
   pulseCountR++;
@@ -133,21 +135,14 @@ void loop() {
 // Commands handling part
 // that are recieved from esp in serial monitor
 
-void handleSerialControl() {
-  // lcd controll
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  displayCompassInfo();
-  displayPulseInfo();
-  lcd.setCursor(0, 3);
-  lcd.print("ESP");
-  
+void handleSerialControl() {  
   // Check if there is incoming data from the serial monitor
   if (Serial.available() > 0) {
     // Read the incoming message
     String message = Serial.readStringUntil('\n');
     Serial.print("Message received, content: ");
     Serial.println(message);
+    lastCmd = message;
     // Find the positions of the command keywords in the message
     int pos_lcd = message.indexOf("LCD");
     int pos_drive_dist = message.indexOf("Move");
@@ -229,7 +224,20 @@ void handleSerialControl() {
       lcd.print("Error: unknown cmd");
     }
   }
+  // lcd controll
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  displayCompassInfo();
+  displayPulseInfo();
+  lcd.setCursor(0, 3);
+  lcd.print("ESP");
+  // needed for the first time when nothing was executed before
+  if (lastCmd != ""){
+    lcd.print("|LCmd: ");
+    lcd.print(lastCmd);
+  }
 }
+
 void handleJoystickControl() {
   // Joystick control logic (your existing joystick implementation)
   int xValue = analogRead(joyX);
@@ -257,7 +265,11 @@ void handleJoystickControl() {
   displayCompassInfo();
   displayPulseInfo();
   lcd.setCursor(0, 3);
-  lcd.print("JoyStick");
+  lcd.print("JoyStick|");
+  lcd.print("Y:");
+  lcd.print(yValue);
+  lcd.print("|X:");
+  lcd.print(xValue);
 }
 
 void displayCompassInfo() {
@@ -389,9 +401,10 @@ void turnRight(int speedPercent) {
 }
 
 void driveDistance(int cm, int speedPercent) {
-  int targetPulses = abs(cm) * PULSE_AVG;
-  pulseCountR = 0;      
-  pulseCountL = 0;
+  // existed pulses + desired travell distance = targer pulses
+  // we do not zero pulse counts here becuase we need to keep track on them
+  // and zero them only when ESP/JoyStick mode changed
+  int targetPulses = (abs(cm) * PULSE_AVG) + pulseCountR;
   int pwmValue = map(speedPercent, 0, 100, 0, 255);
 
   if (cm > 0) {
