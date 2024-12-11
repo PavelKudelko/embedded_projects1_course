@@ -1,5 +1,6 @@
 #include <Wire.h>
 #include <LiquidCrystal.h>
+#include <avr/wdt.h> // include watchdog
 
 LiquidCrystal lcd(37, 36, 35, 34, 33, 32);
 // compass address
@@ -12,6 +13,8 @@ const int joyY = A9;
 const int joyButton = 19;
 // pulse count per cm (found by experiments)
 const int PULSE_AVG = 13.2;
+// alert led
+const int alertPin = 5;
 
 #define JOYSTICK_MODE 0
 #define SERIAL_MODE 1
@@ -88,6 +91,9 @@ int getCorrectedCompassBearing() {
   return static_cast<int>(correctedDegrees); // Return as integer
 }
 
+unsigned long lastHeartbeatTime = 0;
+const unsigned long heartbeatInterval = 2500; // 2 seconds for heartbeat interval
+
 void setup() {
   // delay for stability (mostly for compass)
   delay(2000);
@@ -109,6 +115,8 @@ void setup() {
   Wire.begin();
   // Compass calibration
   calibrateCompass();
+  // set watchdog to trigger after 4 secs of inactivity
+  pinMode(alertPin, OUTPUT);
 }
 
 void buttonISR() {
@@ -132,8 +140,22 @@ void loop() {
   }
   delay(100);  // Add a short delay for stability
 }
-// Commands handling part
-// that are recieved from esp in serial monitor
+
+void checkHeartbeat() {
+  // Check if the heartbeat interval has passed
+  if (millis() - lastHeartbeatTime > heartbeatInterval) {
+    analogWrite(alertPin, 255);
+    Serial.println("No heartbeat");
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Heartbeat missing!");
+    lcd.setCursor(0, 1);
+    lcd.print("Switch to JoyStick.");
+    delay(2500);
+    analogWrite(alertPin, 0);
+    wdt_reset();  // Reset the watchdog
+  }
+}
 
 void handleSerialControl() {  
   // Check if there is incoming data from the serial monitor
@@ -142,21 +164,22 @@ void handleSerialControl() {
     String message = Serial.readStringUntil('\n');
     Serial.print("Message received, content: ");
     Serial.println(message);
-    lastCmd = message;
+
+    // Only update lastCmd if the message does not contain "HEARTBEAT"
+    if (message.indexOf("HEARTBEAT") == -1) {
+      lastCmd = message;
+    }
     // Find the positions of the command keywords in the message
-    int pos_lcd = message.indexOf("LCD");
     int pos_drive_dist = message.indexOf("Move");
     int pos_turn = message.indexOf("Turn");
     int pos_find_north = message.indexOf("find");
-    // Handle LCD message commands
-    // In not used in the esp
-    if (pos_lcd > -1) {
-      Serial.println("Command = LCD ");
-      pos_lcd = message.indexOf(":");
-      String stat = message.substring(pos_lcd + 1); // Extract message
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print(stat);
+    // heartbeat
+    int pos_heartbeat = message.indexOf("HEARTBEAT");
+
+    if ( pos_heartbeat > -1) {
+      lastHeartbeatTime = millis();
+      Serial.println("Heartbeat received.");
+      // reset watchdog to prevent reset if hearbeat recieved
     }
     // Handle Move command
     else if (pos_drive_dist > -1) {
@@ -224,6 +247,10 @@ void handleSerialControl() {
       lcd.print("Error: unknown cmd");
     }
   }
+
+  // Call the checkHeartbeat function to handle heartbeat logic
+  checkHeartbeat();
+
   // lcd controll
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -231,6 +258,10 @@ void handleSerialControl() {
   displayPulseInfo();
   lcd.setCursor(0, 3);
   lcd.print("ESP");
+
+  // delete any trailing whitespace or special characters from lastCmd
+  lastCmd.trim();
+
   // needed for the first time when nothing was executed before
   if (lastCmd != ""){
     lcd.print("|LCmd: ");
