@@ -39,3 +39,10 @@ function findNorth() {
     fetch('/findNorth');  // Send the find:North command to the server
     console.log("Finding North");  // Log the command for debugging
 }
+
+// use fetch for sending periodic heartbeat ping
+setInterval(() => {
+	fetch('/heartbeat', { method: 'POST' })
+	  .then(response => console.log('Heartbeat sent:', response.status))
+	  .catch(error => console.error('Error sending heartbeat:', error));
+  }, 2000);

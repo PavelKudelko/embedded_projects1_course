@@ -42,6 +42,7 @@ void setup() {
   server.on("/backwards20", [](){ handleMove(-20); });  // handleMove(x) as soon as it's triggered.
   server.on("/compass", handleCompass);                 // When requesting URL "/compass", call the handleCompass function
   server.on("/findNorth", handleFindNorth);             // sends "find:North"
+  server.on("/heartbeat", handleHeartbeat);             // forwards heartbeat every second to arduino
 
 
   //  If someone tries to access a URL that does not exist (e.g. due to a typo), call the handleNotFound function
@@ -84,4 +85,9 @@ void handleCompass() {
 void handleFindNorth() {
   Serial.println("find:North");                    // Send the find:North command to Arduino Mega
   server.send(200);                                // Send a 200 OK response to the client (browser)
+}
+
+void handleHeartbeat() {
+  Serial.println("HEARTBEAT"); // Forward heartbeat to Arduino Mega via Serial
+  server.send(200);
 }
