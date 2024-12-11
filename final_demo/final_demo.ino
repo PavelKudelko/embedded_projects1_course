@@ -92,7 +92,7 @@ int getCorrectedCompassBearing() {
 }
 
 unsigned long lastHeartbeatTime = 0;
-const unsigned long heartbeatInterval = 2500; // 2 seconds for heartbeat interval
+const unsigned long heartbeatInterval = 2500; // 2.5 seconds for heartbeat interval
 
 void setup() {
   // delay for stability (mostly for compass)
@@ -110,7 +110,6 @@ void setup() {
   attachInterrupt(digitalPinToInterrupt(ENCA_L), encoderISRleft, RISING);
   attachInterrupt(digitalPinToInterrupt(joyButton), buttonISR, FALLING);
   pinMode(joyButton, INPUT_PULLUP);
-
   lcd.begin(20, 4);
   Wire.begin();
   // Compass calibration
@@ -179,7 +178,6 @@ void handleSerialControl() {
     if ( pos_heartbeat > -1) {
       lastHeartbeatTime = millis();
       Serial.println("Heartbeat received.");
-      // reset watchdog to prevent reset if hearbeat recieved
     }
     // Handle Move command
     else if (pos_drive_dist > -1) {
@@ -247,10 +245,8 @@ void handleSerialControl() {
       lcd.print("Error: unknown cmd");
     }
   }
-
   // Call the checkHeartbeat function to handle heartbeat logic
   checkHeartbeat();
-
   // lcd controll
   lcd.clear();
   lcd.setCursor(0, 0);
@@ -258,7 +254,6 @@ void handleSerialControl() {
   displayPulseInfo();
   lcd.setCursor(0, 3);
   lcd.print("ESP");
-
   // delete any trailing whitespace or special characters from lastCmd
   lastCmd.trim();
 
@@ -273,11 +268,9 @@ void handleJoystickControl() {
   // Joystick control logic (your existing joystick implementation)
   int xValue = analogRead(joyX);
   int yValue = analogRead(joyY);
-
   // Map joystick Y values to motor speeds (-255 to 255)
   int motorSpeedL = map(yValue, 0, 1023, -255, 255);
   int motorSpeedR = motorSpeedL;
-
   // Apply turning only if the X-axis is outside the deadzone
   if (abs(xValue - X_CENTER) > DEADZONE) {
     int turningFactor = map(xValue, 0, 1023, -255, 255);
@@ -352,7 +345,6 @@ void turnExact(int angle) {
   // Determine direction and target angle
   bool isRightTurn = (angle > 0);
   int targetAngle = abs(angle);
-
   // Loop until the accumulated angle reaches the target angle
   while (accumulatedAngle < targetAngle) {
     int newHeading = getCorrectedCompassBearing();
@@ -378,14 +370,12 @@ void turnExact(int angle) {
       }
     }
     currentHeading = newHeading;
-
     // Turn in the specified direction
     if (isRightTurn) {
       turnRight(25); 
     } else {
       turnLeft(25);
     }
-
     delay(50);  // Small delay for stability
   }
   stopMotors();
