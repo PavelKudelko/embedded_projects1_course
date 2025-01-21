@@ -37,6 +37,9 @@ const int LIDAR_SAMPLES = 50;
 int lidar_vals[LIDAR_SAMPLES] = {0};
 int curIndx = 0;
 
+// length of the car
+const int ROBOT_LENGHT = 20;
+
 void encoderISR() {
   pulseCountR++;
 }
@@ -148,51 +151,48 @@ int get_dist() {
 }
 
 void start_measure() {
-  int dist1 = get_dist();
+  int dist1 = get_dist(); // First distance
   turnExact(90);
 
-  int dist2 = get_dist();
+  int dist2 = get_dist(); // Second distance
   turnExact(90);
 
-  int dist3 = get_dist();
+  int dist3 = get_dist(); // Third distance
   turnExact(90);
 
-  int dist4 = get_dist();
+  int dist4 = get_dist(); // Fourth distance
 
-  // Calculate area (assuming a rectangular space)
-  int area = dist1 * dist2;
-  int volume = area * 0.3; // Assuming a ceiling height of 30 cm (0.3 meters)
+  int area = (dist1 + ROBOT_LENGHT + dist3) * (dist2 + ROBOT_LENGHT + dist4) / 2; // Using the average of opposite sides
+
+  int volume = (area / 100) * 0.3; // Area * height = volume in cubic centimeters
 
   // Display area and volume on LCD
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Area: ");
   lcd.print(area);
-  lcd.print(" m^2");
+  lcd.print(" cm^2");
   lcd.setCursor(0, 1);
   lcd.print("Volume: ");
   lcd.print(volume);
   lcd.print(" m^3");
 
+  // Print area and volume to Serial Monitor
   Serial.print("Area: ");
   Serial.print(area);
-  Serial.print(" m^2, Volume: ");
+  Serial.print(" cm^2, Volume: ");
   Serial.print(volume);
-  Serial.println(" m^3");
+  Serial.println(" cm^3");
 
-  lcd.setCursor(0,2 );
-
+  // Display the four distances on the LCD
+  lcd.setCursor(0, 3);
   lcd.print(dist1);
   lcd.print("|");
-
   lcd.print(dist2);
   lcd.print("|");
-
   lcd.print(dist3);
   lcd.print("|");
-
   lcd.print(dist4);
-  lcd.print("|");
 }
 
 void turnExact(int angle) {
