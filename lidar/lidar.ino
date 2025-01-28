@@ -30,6 +30,8 @@ const int DEBOUNCE = 200;
 #define Motor_L_pwm_pin      9
 #define Motor_R_pwm_pin      10
 
+const int potPin = A1;
+
 // offset for getting real values
 volatile int COMPASS_READING_OFFSET = 0;
 
@@ -109,6 +111,8 @@ void setup() {
   pinMode(Motor_R_dir_pin, OUTPUT);
   pinMode(Motor_L_pwm_pin, OUTPUT);
   pinMode(Motor_R_pwm_pin, OUTPUT);
+  // potentialmeter setup
+  pinMode(potPin, INPUT);
   // ISR functions (pulse count for L and R and joy button)
   attachInterrupt(digitalPinToInterrupt(ENCA_R), encoderISR, RISING);
   attachInterrupt(digitalPinToInterrupt(ENCA_L), encoderISRleft, RISING);
@@ -131,7 +135,6 @@ void buttonISR() {
 }
 
 void loop() {
-  lcd.setCursor(0, 0);
   // // Collecting lidar data
   // int dist = get_dist(); // Get distance measurement
   // Serial.println(dist);
@@ -153,12 +156,18 @@ void followCommand(int param = 20) {
       return;  // Exit the followCommand function, stopping the loop
     }
 
+    // dist from potentialmeter
+    int param = map(analogRead(potPin), 0, 1023,  5, 40);
     // Follow logic
-    if (get_dist() >= param) {
+    if (get_dist() > param) {
       drive(50, true);  // Move forward
     }
-    else {
+    else if (get_dist() < param){
       drive(50, false);  // Stop or move backward
+    }
+    // just stop if it reaches needed dist
+    else {
+      stopMotors();
     }
 
     delay(100);  // Small delay to prevent an infinite loop that's too fast
@@ -182,7 +191,6 @@ void handleSerialControl() {
       lcd.setCursor(0, 0);
       lcd.print("Command = Follow");
 
-      // Execute follow command logic
       followCommand();
     }
     // Handle Measure command (no parameters)
@@ -213,7 +221,7 @@ int get_dist() {
 
 void measure() {
   if (buttonPressed) {
-    buttonPressed = false
+    buttonPressed = false;
     stopMotors();
   }
   int dist1 = get_dist(); // First distance
