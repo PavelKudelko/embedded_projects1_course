@@ -38,7 +38,10 @@ int lidar_vals[LIDAR_SAMPLES] = {0};
 int curIndx = 0;
 
 // length of the car
-const int ROBOT_LENGHT = 20;
+const int ROBOT_LENGTH = 20;
+
+//lidar correction
+const int LIDAR_CORR_VAL = 10;
 
 void encoderISR() {
   pulseCountR++;
@@ -94,7 +97,7 @@ int avg_lidar_val(int vals[], int size) {
 
 void setup() {
   delay(2000);
-  Serial.begin(115200); // Initialize serial connection to display distance readings
+  Serial.begin(9600); // Initialize serial connection to display distance readings
 
   myLidarLite.begin(0, true); // Set configuration to default and I2C to 400 kHz
   myLidarLite.configure(0); // Change this number to try out alternate configurations
@@ -123,34 +126,96 @@ void buttonISR() {
   if (currentTime - lastDebounceTime > DEBOUNCE) {
     buttonPressed = true;
     lastDebounceTime = currentTime;
+    lcd.clear();
   }
 }
 
 void loop() {
   lcd.setCursor(0, 0);
+  // // Collecting lidar data
+  // int dist = get_dist(); // Get distance measurement
+  // Serial.println(dist);
+  handleSerialControl();
 
-  // Collecting lidar data
-  int dist = get_dist(); // Get distance measurement
-  Serial.println(dist);
-
-  // Handle button press to start measurements
   if (buttonPressed) {
+    stopMotors();
     buttonPressed = false;
-    start_measure(); // Start measurement process when button is pressed
   }
 
   delay(500); // Delay to control update frequency
 }
 
+void followCommand(int param = 20) {
+  while (true) {
+    // Check if the button is pressed to stop the car
+    if (buttonPressed) {
+      stopMotors();  // Stop the car
+      return;  // Exit the followCommand function, stopping the loop
+    }
+
+    // Follow logic
+    if (get_dist() >= param) {
+      drive(50, true);  // Move forward
+    }
+    else {
+      drive(50, false);  // Stop or move backward
+    }
+
+    delay(100);  // Small delay to prevent an infinite loop that's too fast
+  }
+}
+
+void handleSerialControl() {
+  // Check if there is incoming data from the serial monitor
+  if (Serial.available() > 0) {
+    // Read the incoming message
+    String message = Serial.readStringUntil('\n');
+    Serial.print("Message received, content: ");
+    Serial.println(message);
+    
+    // Handle Follow command (no parameters)
+    int pos_follow = message.indexOf("follow");
+
+    if (pos_follow > -1) {
+      Serial.println("Command = Follow");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Command = Follow");
+
+      // Execute follow command logic
+      followCommand();
+    }
+    // Handle Measure command (no parameters)
+    else if (message.indexOf("measure") > -1) {
+      Serial.println("Command = Measure");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Command = Measure");
+
+      // Execute measure command logic
+      measure();
+    }
+    // Handle invalid or unrecognized commands
+    else {
+      lcd.setCursor(0, 0);
+      lcd.print("Error: unknown cmd");
+    }
+  }
+}
+
 int get_dist() {
   for (int i = 0; i < LIDAR_SAMPLES; i++) {
-    lidar_vals[i] = myLidarLite.distance();
+    lidar_vals[i] = myLidarLite.distance() - LIDAR_CORR_VAL;
   }
 
   return avg_lidar_val(lidar_vals, LIDAR_SAMPLES); // Calculate average
 }
 
-void start_measure() {
+void measure() {
+  if (buttonPressed) {
+    buttonPressed = false
+    stopMotors();
+  }
   int dist1 = get_dist(); // First distance
   turnExact(90);
 
@@ -162,16 +227,54 @@ void start_measure() {
 
   int dist4 = get_dist(); // Fourth distance
 
-  int area = (dist1 + ROBOT_LENGHT + dist3) * (dist2 + ROBOT_LENGHT + dist4) / 2; // Using the average of opposite sides
+  // Debugging distances
+  Serial.print("Distances: ");
+  Serial.print(dist1); Serial.print(", ");
+  Serial.print(dist2); Serial.print(", ");
+  Serial.print(dist3); Serial.print(", ");
+  Serial.println(dist4);
 
-  int volume = (area / 100) * 0.3; // Area * height = volume in cubic centimeters
+  // Check for valid inputs
+  if (dist1 < 0 || dist2 < 0 || dist3 < 0 || dist4 < 0 || ROBOT_LENGTH < 0) {
+      Serial.println("Error: Negative distance or robot length!");
+      lcd.setCursor(0, 0);
+      lcd.print("Invalid distances!");
+      return;
+  }
 
+  // Step-by-step area calculation
+  float side1 = dist1 + ROBOT_LENGTH + dist3;
+  float side2 = dist2 + ROBOT_LENGTH + dist4;
+
+  // Debugging sides
+  Serial.print("Side 1 (m): ");
+  Serial.println(side1 / 100.0); // Convert to meters for debugging
+  Serial.print("Side 2 (m): ");
+  Serial.println(side2 / 100.0); // Convert to meters for debugging
+
+  // Final area calculation
+  float area = (side1 * side2) / 10000.0; // Convert cm^2 to m^2
+  Serial.print("Intermediate area (cm^2): ");
+  Serial.println(side1 * side2);
+  Serial.print("Converted area (m^2): ");
+  Serial.println(area);
+
+  // Volume calculation
+  float volume = area * 0.3; // Height = 0.3 m
+  Serial.print("Volume (m^3): ");
+  Serial.println(volume);
+
+  // Display results
+  display(area, volume, dist1, dist2, dist3, dist4);
+}
+
+float display(float area, float volume, int dist1, int dist2, int dist3, int dist4) {
   // Display area and volume on LCD
   lcd.clear();
   lcd.setCursor(0, 0);
   lcd.print("Area: ");
   lcd.print(area);
-  lcd.print(" cm^2");
+  lcd.print(" m^2");
   lcd.setCursor(0, 1);
   lcd.print("Volume: ");
   lcd.print(volume);
@@ -180,7 +283,7 @@ void start_measure() {
   // Print area and volume to Serial Monitor
   Serial.print("Area: ");
   Serial.print(area);
-  Serial.print(" cm^2, Volume: ");
+  Serial.print(" m^2, Volume: ");
   Serial.print(volume);
   Serial.println(" cm^3");
 
@@ -246,6 +349,24 @@ void turnRight(int speedPercent) {
   digitalWrite(Motor_L_dir_pin, Motor_return);
   analogWrite(Motor_L_pwm_pin, pwmValue);
   analogWrite(Motor_R_pwm_pin, pwmValue);
+}
+
+void drive(int speed, bool direction) {
+  int pwmValue = map(speed, 0, 100, 0, 255);
+  if (direction) {
+    digitalWrite(Motor_L_dir_pin, Motor_forward);
+    digitalWrite(Motor_R_dir_pin, Motor_forward);
+
+    analogWrite(Motor_L_pwm_pin, pwmValue);
+    analogWrite(Motor_R_pwm_pin, pwmValue);
+  }
+  else {
+    digitalWrite(Motor_L_dir_pin, Motor_return);
+    digitalWrite(Motor_R_dir_pin, Motor_return);
+
+    analogWrite(Motor_L_pwm_pin, pwmValue);
+    analogWrite(Motor_R_pwm_pin, pwmValue);
+  }
 }
 
 void stopMotors() {
