@@ -152,12 +152,13 @@ void followCommand(int param = 20) {
   while (true) {
     // Check if the button is pressed to stop the car
     if (buttonPressed) {
+
       stopMotors();  // Stop the car
       return;  // Exit the followCommand function, stopping the loop
     }
 
     // dist from potentialmeter
-    int param = map(analogRead(potPin), 0, 1023,  5, 40);
+    int param = map(analogRead(potPin), 0, 1023, 5, 40);
     // Follow logic
     if (get_dist() > param) {
       drive(50, true);  // Move forward
@@ -173,6 +174,51 @@ void followCommand(int param = 20) {
     delay(100);  // Small delay to prevent an infinite loop that's too fast
   }
 }
+
+void driveTurn() {
+  while (true) {
+    if (buttonPressed) {
+      stopMotors();
+      return;
+    }
+
+    int param = map(analogRead(potPin), 0, 1023, 5, 40);
+    lcd.setCursor(0, 3);
+    lcd.print(param);
+
+    if (get_dist() >= param) {
+      drive(40, true);
+    }
+    else {
+      drive(40, true);
+      turnExact(90);
+    }
+    delay(100);
+  }
+}
+
+void driveCircle() {
+  while (get_dist() < 25) {
+    drive(50, true);
+  }
+  turnExact(90);
+  
+  while (get_dist() < 20) {
+    drive(50, true);
+  }
+  turnExact(90);
+  
+  while (get_dist() < 25) {
+    drive(50, true);
+  }
+  turnExact(90);
+  
+  while (get_dist() < 20) {
+    drive(50, true);
+  }
+  turnExact(90); 
+}
+
 
 void handleSerialControl() {
   // Check if there is incoming data from the serial monitor
@@ -202,6 +248,22 @@ void handleSerialControl() {
 
       // Execute measure command logic
       measure();
+    }
+    else if (message.indexOf("driveTurn") > -1) {
+      Serial.println("Command = driveTurn");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Command = driveTurn");
+
+      driveTurn();
+    }
+    else if (message.indexOf("driveCircle") > -1) {
+      Serial.println("Command = driveCircle");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Command = driveCircle");
+
+      driveCircle();
     }
     // Handle invalid or unrecognized commands
     else {
