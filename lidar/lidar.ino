@@ -35,7 +35,7 @@ const int potPin = A1;
 // offset for getting real values
 volatile int COMPASS_READING_OFFSET = 0;
 
-const int LIDAR_SAMPLES = 50;
+const int LIDAR_SAMPLES = 100;
 int lidar_vals[LIDAR_SAMPLES] = {0};
 int curIndx = 0;
 
@@ -44,6 +44,21 @@ const int ROBOT_LENGTH = 20;
 
 //lidar correction
 const int LIDAR_CORR_VAL = 10;
+
+// Function declarations
+void handleSerialControl();
+void stopMotors();
+void displayLidarValues();
+void followCommand(int param = 20);
+void turnExact(int angle, String direction = "");
+void driveTurn();
+void driveCircle();
+int get_dist();
+void measure();
+float display(float area, float volume, int dist1, int dist2, int dist3, int dist4);
+void turnLeft(int speedPercent);
+void turnRight(int speedPercent);
+void drive(int speed, bool direction);
 
 void encoderISR() {
   pulseCountR++;
@@ -144,8 +159,17 @@ void loop() {
     stopMotors();
     buttonPressed = false;
   }
+  displayLidarValues();
 
   delay(500); // Delay to control update frequency
+}
+
+void displayLidarValues() {
+    int distance = get_dist();
+    lcd.setCursor(0, 3);
+    lcd.print("LIDAR: ");
+    lcd.print(distance);
+    lcd.print(" cm  "); 
 }
 
 void followCommand(int param = 20) {
@@ -171,8 +195,44 @@ void followCommand(int param = 20) {
       stopMotors();
     }
 
-    delay(100);  // Small delay to prevent an infinite loop that's too fast
+    displayLidarValues();
   }
+}
+
+void turnExact(int angle, String direction = "") {
+  if (angle == 0) return;  // No turn needed
+  int startHeading = getCorrectedCompassBearing();
+  int currentHeading = startHeading;
+  int accumulatedAngle = 0;
+  // decide turn dir. If no str provided decide dir by the closest
+  bool isRightTurn = (direction == "") ? (angle > 0) : (direction == "right");  int targetAngle = abs(angle);
+  // Loop until the accumulated angle reaches the target angle
+  while (accumulatedAngle < targetAngle) {
+    int newHeading = getCorrectedCompassBearing();
+    int deltaAngle = newHeading - currentHeading;
+
+    if (deltaAngle > 180) {
+      deltaAngle -= 360;
+    } else if (deltaAngle < -180) {
+      deltaAngle += 360;
+    }
+
+    if (isRightTurn && deltaAngle > 0) {
+      accumulatedAngle += deltaAngle;
+    } else if (!isRightTurn && deltaAngle < 0) {
+      accumulatedAngle -= deltaAngle;
+    }
+
+    currentHeading = newHeading;
+    if (isRightTurn) {
+      turnRight(25); 
+    } else {
+      turnLeft(25);
+    }
+    delay(50);
+  }
+
+  stopMotors(); // Stop the motors after the turn
 }
 
 void driveTurn() {
@@ -193,30 +253,38 @@ void driveTurn() {
       drive(40, true);
       turnExact(90);
     }
-    delay(100);
+    displayLidarValues();
   }
 }
 
 void driveCircle() {
-  while (get_dist() < 25) {
+  float targetDistance1 = 25; // First target distance
+  float targetDistance2 = 20; // Second target distance
+
+  // Drive forward until Lidar detects the target distance
+  while (get_dist() > targetDistance1) { 
+    drive(50, true); 
+    Serial.println(get_dist());
+  }
+  turnExact(90, "left");
+
+  // Drive forward until Lidar detects the second target distance
+  while (get_dist() > targetDistance2) {
+    drive(50, true); 
+  }
+  turnExact(90, "left");
+
+  // Drive forward again until Lidar detects the first target distance
+  while (get_dist() > targetDistance1) {
     drive(50, true);
   }
-  turnExact(90);
-  
-  while (get_dist() < 20) {
+  turnExact(90, "left");
+
+  // Drive forward until Lidar detects the second target distance again
+  while (get_dist() > targetDistance2) {
     drive(50, true);
   }
-  turnExact(90);
-  
-  while (get_dist() < 25) {
-    drive(50, true);
-  }
-  turnExact(90);
-  
-  while (get_dist() < 20) {
-    drive(50, true);
-  }
-  turnExact(90); 
+  turnExact(90, "left");
 }
 
 
@@ -366,43 +434,6 @@ float display(float area, float volume, int dist1, int dist2, int dist3, int dis
   lcd.print(dist3);
   lcd.print("|");
   lcd.print(dist4);
-}
-
-void turnExact(int angle) {
-  if (angle == 0) return;  // No turn needed
-  int startHeading = getCorrectedCompassBearing();
-  int currentHeading = startHeading;
-  int accumulatedAngle = 0;
-  bool isRightTurn = (angle > 0);
-  int targetAngle = abs(angle);
-
-  // Loop until the accumulated angle reaches the target angle
-  while (accumulatedAngle < targetAngle) {
-    int newHeading = getCorrectedCompassBearing();
-    int deltaAngle = newHeading - currentHeading;
-
-    if (deltaAngle > 180) {
-      deltaAngle -= 360;
-    } else if (deltaAngle < -180) {
-      deltaAngle += 360;
-    }
-
-    if (isRightTurn && deltaAngle > 0) {
-      accumulatedAngle += deltaAngle;
-    } else if (!isRightTurn && deltaAngle < 0) {
-      accumulatedAngle -= deltaAngle;
-    }
-
-    currentHeading = newHeading;
-    if (isRightTurn) {
-      turnRight(25); 
-    } else {
-      turnLeft(25);
-    }
-    delay(50);
-  }
-
-  stopMotors(); // Stop the motors after the turn
 }
 
 void turnLeft(int speedPercent) {
