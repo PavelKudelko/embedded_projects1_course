@@ -1,6 +1,7 @@
 #include <Wire.h>
 #include <LIDARLite.h>
 #include <LiquidCrystal.h>
+#include <EEPROM.h>
 
 LIDARLite myLidarLite;
 LiquidCrystal lcd(37, 36, 35, 34, 33, 32);
@@ -35,7 +36,7 @@ const int potPin = A1;
 // offset for getting real values
 volatile int COMPASS_READING_OFFSET = 0;
 
-const int LIDAR_SAMPLES = 100;
+const int LIDAR_SAMPLES = 30;
 int lidar_vals[LIDAR_SAMPLES] = {0};
 int curIndx = 0;
 
@@ -45,10 +46,13 @@ const int ROBOT_LENGTH = 20;
 //lidar correction
 const int LIDAR_CORR_VAL = 10;
 
+// start reading from the first byte (address 0) of the EEPROM
+int address = 0;
+byte value;
+
 // Function declarations
 void handleSerialControl();
 void stopMotors();
-void displayLidarValues();
 void followCommand(int param = 20);
 void turnExact(int angle, String direction = "");
 void driveTurn();
@@ -114,7 +118,21 @@ int avg_lidar_val(int vals[], int size) {
 
 void setup() {
   delay(2000);
-  Serial.begin(9600); // Initialize serial connection to display distance readings
+  Serial.begin(9600);
+  while (!Serial) {
+    ; // wait for serial port to connect
+  }
+  // read eeprom:
+
+  // Serial.println("EEPROM Contents:");
+  // // Iterate through all EEPROM addresses
+  // for (int address = 0; address < EEPROM.length(); address++) {
+  //   byte value = EEPROM.read(address);
+  //   Serial.print(address);
+  //   Serial.print("\t");
+  //   Serial.println(value, DEC);
+  // }
+  // Serial.println("EEPROM Read Complete.");
 
   myLidarLite.begin(0, true); // Set configuration to default and I2C to 400 kHz
   myLidarLite.configure(0); // Change this number to try out alternate configurations
@@ -159,7 +177,8 @@ void loop() {
     stopMotors();
     buttonPressed = false;
   }
-  displayLidarValues();
+
+  Serial.println(get_dist());
 
   delay(500); // Delay to control update frequency
 }
@@ -195,7 +214,7 @@ void followCommand(int param = 20) {
       stopMotors();
     }
 
-    displayLidarValues();
+    
   }
 }
 
@@ -253,13 +272,15 @@ void driveTurn() {
       drive(40, true);
       turnExact(90);
     }
-    displayLidarValues();
+    
   }
 }
 
 void driveCircle() {
   float targetDistance1 = 25; // First target distance
   float targetDistance2 = 20; // Second target distance
+
+  int initPulse = pulseCountR;
 
   // Drive forward until Lidar detects the target distance
   while (get_dist() > targetDistance1) { 
@@ -285,6 +306,11 @@ void driveCircle() {
     drive(50, true);
   }
   turnExact(90, "left");
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("dist: ");
+  lcd.print(pulseCountR - initPulse);
 }
 
 
@@ -303,7 +329,7 @@ void handleSerialControl() {
       Serial.println("Command = Follow");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Command = Follow");
+      lcd.print("cmd = Follow");
 
       followCommand();
     }
@@ -312,7 +338,7 @@ void handleSerialControl() {
       Serial.println("Command = Measure");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Command = Measure");
+      lcd.print("cmd = Measure");
 
       // Execute measure command logic
       measure();
@@ -321,7 +347,7 @@ void handleSerialControl() {
       Serial.println("Command = driveTurn");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Command = driveTurn");
+      lcd.print("cmd = driveTurn");
 
       driveTurn();
     }
@@ -329,9 +355,25 @@ void handleSerialControl() {
       Serial.println("Command = driveCircle");
       lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("Command = driveCircle");
+      lcd.print("cmd = driveCircle");
 
       driveCircle();
+    }
+    else if (message.indexOf("calibrate") > - 1) {
+      Serial.println("Command = calibrate");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("cmd = driveCircle");
+
+      calibrate();
+    }
+    else if (message.indexOf("getEEPROM") > - 1) {
+      Serial.println("Command = getEEPROM");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("cmd = getEEPROM");
+
+      getEEPROM();
     }
     // Handle invalid or unrecognized commands
     else {
@@ -339,6 +381,66 @@ void handleSerialControl() {
       lcd.print("Error: unknown cmd");
     }
   }
+}
+
+void getEEPROM(){
+  uint8_t retrievedValue = EEPROM.read(0);
+  double distPerPulse = retrievedValue / 100.0; // Convert back to double
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("EEPROM val: ");
+  lcd.print(distPerPulse);
+}
+
+void calibrate() {
+  int initDist = get_dist();
+  pulseCountR = 0;
+  pulseCountL = 0;
+  int finalDist = initDist;  
+
+  // Drive until we have traveled 20cm
+  while (abs(initDist - finalDist) < 20) { 
+    drive(30, true);
+    finalDist = get_dist();
+  }
+  stopMotors();
+
+  Serial.println("### calibration results ###");
+  Serial.print("dist travelled: ");
+  Serial.println(abs(initDist - finalDist));
+  Serial.print("pulse counts: ");
+  Serial.print(pulseCountR);
+  Serial.print("|");
+  Serial.println(pulseCountL);
+
+  double distPerPulse = 0.0;
+  if (pulseCountR > 0) { // Prevent division by zero
+    distPerPulse = (double)(abs(initDist - finalDist)) / pulseCountR;
+  }
+
+  Serial.print("dist per pulse: ");
+  Serial.println(distPerPulse);
+  Serial.println("### end of results ###");
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("dist: ");
+  lcd.print(abs(initDist - finalDist));
+  lcd.setCursor(0, 1);
+  lcd.print("pls cnt: ");
+  lcd.print(pulseCountR);
+  lcd.print("|");
+  lcd.print(pulseCountL);
+  lcd.setCursor(0, 2);
+  lcd.print("distPerPulse: ");
+  lcd.print(distPerPulse);
+
+  // Store to EEPROM
+  uint8_t scaledValue = round(distPerPulse * 100);
+  EEPROM.update(0, scaledValue);
+  lcd.setCursor(0, 3);
+  lcd.print("EEPROM val updated");
 }
 
 int get_dist() {
