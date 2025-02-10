@@ -59,19 +59,24 @@ void loop() {
   // Check if data is available from the Arduino Mega
   if (Serial.available() > 0) {
     String data = Serial.readStringUntil('\n');
+    data.trim();  // Remove any trailing newline or spaces
+
     if (data.startsWith("LIDAR:")) {
       lidarData = data.substring(6);
-      Serial.println("Lidar: " + lidarData);
-    }
+      lidarData.trim();
+     // Serial.println("Lidar from ESP: " + lidarData);
+    } 
     else if (data.startsWith("COMPASS:")) {
       cmpsVal = data.substring(8);
-      Serial.println("Compass: " + cmpsVal);
-    }
+      cmpsVal.trim();
+      // Serial.println("Compass from ESP: " + cmpsVal);
+    } 
     else {
       Serial.println("Command not found");
     }
   }
 }
+
 
 // This function is called when a non-existing URL is accessed (404 error)
 void handleNotFound() {

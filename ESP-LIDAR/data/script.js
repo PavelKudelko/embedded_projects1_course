@@ -12,6 +12,7 @@ if (compassSlider) {
 
 
 setInterval(fetchLidarData, 500); // Fetch LIDAR data every half second
+setInterval(fetchCompassData, 500); // fetch cmpsVal every 0.5 second
 
 // Function to update the compass display (show the current compass position)
 function updateCompass(pos) {
@@ -48,6 +49,7 @@ async function fetchLidarData() {
     const lidarValue = parseInt(data, 10); 		// Parse the LIDAR data as an integer
 
     if (lidarText) lidarText.innerText = `${lidarValue} cm`;	// Update the LIDAR text element with the fetched data
+    console.log(`${lidarValue} cm`);
   } catch (error) {
     console.error('Error fetching LIDAR data:', error);		 	// Log any errors to the console
   }
@@ -55,11 +57,12 @@ async function fetchLidarData() {
 
 async function fetchCompassData() {
   try {
-    const response = await fetch('/compass');
+    const response = await fetch('/compass_value');
     const data = await response.text();
     const compassVal = parseInt(data, 10);
 
     if (compassDisplay) compassDisplay.innerText = `${compassVal}`;
+    console.log(`${compassVal} degree`)
   } catch (error) {
     console.error('Error fetching COMPASS data:', error)
   }
