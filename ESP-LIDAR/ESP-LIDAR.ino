@@ -7,13 +7,14 @@ const char* password = "Pelle!23";  // Wi-Fi network password
 String lidarData = "0 cm";          // Variable to store LIDAR data
 String cmpsVal = "0°"; // Store compass value
 bool isWarning = false;
+unsigned long lastWarningTime = 0;
+const unsigned long WARNING_DURATION = 2000;
 
 ESP8266WebServer server(80);    // Create an instance of the WebServer on port 80 (default HTTP port)
 
 
 void setup() {
   Serial.begin(9600);
-
 
   // Initialize the file system (SPIFFS) on the ESP8266
   if (!SPIFFS.begin()) {        // Initialize and check success on SPIFFS
@@ -48,7 +49,7 @@ void setup() {
   server.on("/warning", handleWarning);
 //  server.on("/cantmove", handleCantMove);
 //  server.on("/stop", handleStop);
-//  
+//
 
   //  If someone tries to access a URL that does not exist (e.g. due to a typo), call the handleNotFound function
   server.onNotFound(handleNotFound);
@@ -58,10 +59,14 @@ void setup() {
   server.begin();
 }
 
+
 void loop() {
   server.handleClient();
 
-  isWarning = false;
+  // Check if warning should be cleared based on time
+  if (isWarning && (millis() - lastWarningTime > WARNING_DURATION)) {
+    isWarning = false;
+  }
 
   // Check if data is available from the Arduino Mega
   if (Serial.available() > 0) {
@@ -71,15 +76,14 @@ void loop() {
     if (data.startsWith("LIDAR:")) {
       lidarData = data.substring(6);
       lidarData.trim();
-     // Serial.println("Lidar from ESP: " + lidarData);
-    } 
+    }
     else if (data.startsWith("COMPASS:")) {
       cmpsVal = data.substring(8);
       cmpsVal.trim();
-      // Serial.println("Compass from ESP: " + cmpsVal);
     }
     else if (data.startsWith("WARNING")) {
       isWarning = true;
+      lastWarningTime = millis(); // Update the last warning time
     }
     else {
       Serial.println("Command not found");

@@ -105,7 +105,7 @@ int avg_lidar_val(int vals[], int size) {
 void setup() {
   delay(2000);
   Serial.begin(9600);
-  Serial1.begin(115200);
+  Serial1.begin(9600);
   // define second serial monitor
   // Serial2.begin(9600);
   while (!Serial && !Serial1) {
@@ -153,7 +153,7 @@ void loop() {
   }
   Serial1.println("LIDAR:" + String(get_dist()));
   Serial1.println("COMPASS:" + String(getCorrectedCompassBearing()));
-  delay(30); // Delay to control update frequency
+  delay(70); // Delay to control update frequency
 }
 
 void displayLidarValues() {

@@ -11,27 +11,35 @@ if (compassSlider) {
 }
 
 
-setInterval(fetchLidarData, 100); // Fetch LIDAR data every half second
-setInterval(fetchCompassData, 100); // fetch cmpsVal every 0.5 second'
+setInterval(fetchLidarData, 200); // Fetch LIDAR data every half second
+setInterval(fetchCompassData, 200); // fetch cmpsVal every 0.5 second'
+setInterval(fetchWarning, 200);
 setInterval(fetchWarning, 100);
 
 async function fetchWarning() {
-  try {
-      const response = await fetch('/warning');
-      const data = await response.text();
+    try {
+        const response = await fetch('/warning');
+        const data = await response.text();
 
-      // Get the warning message element
-      const warningElement = document.getElementById('warningMessage');
+        const warningElement = document.getElementById('warningMessage');
 
-      // Show or hide the warning based on the response
-      if (data.trim() === 'true') {
-          warningElement.style.display = 'block';  // Show warning
-      } else {
-          warningElement.style.display = 'none';   // Hide warning
-      }
-  } catch (error) {
-      console.error('error fetching warning: ', error);
-  }
+        if (data.trim() === 'true') {
+            // Add fade-in effect
+            warningElement.style.opacity = '0';
+            warningElement.style.display = 'block';
+            setTimeout(() => {
+                warningElement.style.opacity = '1';
+            }, 10);
+        } else {
+            // Add fade-out effect
+            warningElement.style.opacity = '0';
+            setTimeout(() => {
+                warningElement.style.display = 'none';
+            }, 300); // Wait for fade out to complete
+        }
+    } catch (error) {
+        console.error('error fetching warning: ', error);
+    }
 }
 
 // Function to update the compass display (show the current compass position)
