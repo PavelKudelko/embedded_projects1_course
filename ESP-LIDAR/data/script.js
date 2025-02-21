@@ -11,10 +11,10 @@ if (compassSlider) {
 }
 
 
-setInterval(fetchLidarData, 200); // Fetch LIDAR data every half second
-setInterval(fetchCompassData, 200); // fetch cmpsVal every 0.5 second'
-setInterval(fetchWarning, 200);
-setInterval(fetchWarning, 100);
+setInterval(fetchLidarData, 500); // Fetch LIDAR data every half second
+setInterval(fetchCompassData, 500); // fetch cmpsVal every 0.5 second'
+setInterval(fetchWarning, 300);
+
 
 async function fetchWarning() {
     try {
