@@ -6,6 +6,7 @@ const char* ssid = "SOURCE";        // Wi-Fi network name (SSID)
 const char* password = "Pelle!23";  // Wi-Fi network password
 String lidarData = "0 cm";          // Variable to store LIDAR data
 String cmpsVal = "0°"; // Store compass value
+bool isWarning = false;
 
 ESP8266WebServer server(80);    // Create an instance of the WebServer on port 80 (default HTTP port)
 
@@ -44,6 +45,10 @@ void setup() {
   server.on("/compass", handleCompass);                 // When requesting URL "/compass", call the handleCompass function
   server.on("/lidar", handleLidar);                     // When requesting URL "/lidar", call the handleLidar function.
   server.on("/compass_value", handleCompassValue); // compass value
+  server.on("/warning", handleWarning);
+//  server.on("/cantmove", handleCantMove);
+//  server.on("/stop", handleStop);
+//  
 
   //  If someone tries to access a URL that does not exist (e.g. due to a typo), call the handleNotFound function
   server.onNotFound(handleNotFound);
@@ -55,6 +60,8 @@ void setup() {
 
 void loop() {
   server.handleClient();
+
+  isWarning = false;
 
   // Check if data is available from the Arduino Mega
   if (Serial.available() > 0) {
@@ -70,7 +77,10 @@ void loop() {
       cmpsVal = data.substring(8);
       cmpsVal.trim();
       // Serial.println("Compass from ESP: " + cmpsVal);
-    } 
+    }
+    else if (data.startsWith("WARNING")) {
+      isWarning = true;
+    }
     else {
       Serial.println("Command not found");
     }
@@ -106,3 +116,15 @@ void handleLidar() {
 void handleCompassValue() {
   server.send(200, "text/plain", cmpsVal);
 }
+
+void handleWarning() {
+  server.send(200, "text/plain", isWarning);
+}
+
+//void handleCantMove() {
+//  server.send(200, "text/plain", "CANTMOVE");
+//}
+//
+//void handleStop() {
+//  server.send(200, "text/plain", "EMERGENCY-STOP");
+//}

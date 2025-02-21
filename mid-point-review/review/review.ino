@@ -105,10 +105,10 @@ int avg_lidar_val(int vals[], int size) {
 void setup() {
   delay(2000);
   Serial.begin(9600);
-  Serial1.begin(9600);
+  Serial1.begin(115200);
   // define second serial monitor
   // Serial2.begin(9600);
-  while (!Serial) {
+  while (!Serial && !Serial1) {
     ; // wait for serial port to connect
   }
   myLidarLite.begin(0, true); // Set configuration to default and I2C to 400 kHz
@@ -153,15 +153,15 @@ void loop() {
   }
   Serial1.println("LIDAR:" + String(get_dist()));
   Serial1.println("COMPASS:" + String(getCorrectedCompassBearing()));
-  delay(100); // Delay to control update frequency
+  delay(30); // Delay to control update frequency
 }
 
 void displayLidarValues() {
-    int distance = get_dist();
-    lcd.setCursor(0, 3);
-    lcd.print("LIDAR: ");
-    lcd.print(distance);
-    lcd.print(" cm  "); 
+  int distance = get_dist();
+  lcd.setCursor(0, 3);
+  lcd.print("LIDAR: ");
+  lcd.print(distance);
+  lcd.print(" cm  "); 
 }
 
 
@@ -191,9 +191,9 @@ void turnExact(int angle, String direction = "") {
 
     currentHeading = newHeading;
     if (isRightTurn) {
-      turnRight(25); 
+      turnRight(40); 
     } else {
-      turnLeft(25);
+      turnLeft(40);
     }
     delay(50);
   }
@@ -209,8 +209,8 @@ void handleSerialControl() {
     Serial.print("Message received, content: ");
     Serial.println(message);
 
-    int pos_drive_dist = message.indexOf("MOVE");
-    int pos_turn = message.indexOf("TURN");
+    int pos_drive_dist = message.indexOf("Move");
+    int pos_turn = message.indexOf("Turn");
 
     if (pos_drive_dist > -1) {
       Serial.println("Command = Move");
@@ -258,23 +258,6 @@ void handleSerialControl() {
         lcd.print("Error: missing angle");
       }
     }
-    
-    else if (message.indexOf("calibrate") > - 1) {
-      Serial.println("Command = calibrate");
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("cmd = calibrate");
-
-      calibrate();
-    }
-    else if (message.indexOf("getEEPROM") > - 1) {
-      Serial.println("Command = getEEPROM");
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("cmd = getEEPROM");
-
-      getEEPROM();
-    }
     // Handle invalid or unrecognized commands
     else {
      lcd.setCursor(0, 0);
@@ -284,99 +267,87 @@ void handleSerialControl() {
 }
 
 void move(int cm, int speedPercent) {
-  // existed pulses + desired travell distance = targer pulses
-  // we do not zero pulse counts here becuase we need to keep track on them
-  // and zero them only when ESP/JoyStick mode changed
-  int targetPulses = (abs(cm) * PULSE_AVG) + pulseCountR;
-  int pwmValue = map(speedPercent, 0, 100, 0, 255);
-
+  int distance = get_dist();
+  
+  // If initially blocked, try to find clear path
+  if (distance < 10) {
+    int rotations = 0;
+    bool clearPathFound = false;
+    
+    // Try up to 4 times
+    while (rotations < 4 && !clearPathFound) {
+      turnExact(90, "right");
+      rotations++;
+      
+      distance = get_dist();
+      if (distance >= 10) {
+        clearPathFound = true;
+        break;
+      }
+    }
+    
+    if (!clearPathFound) {
+      Serial.println("Surrounded by obstacles - cannot move");
+      // send message to esp
+      Serial1.println("CANT-MOVE");
+      return;
+    }
+  }
+  
+  // Get fresh distance reading after any rotations
+  distance = get_dist();
+  
+  // Calculate target distance based on direction
+  int targetDist;
   if (cm > 0) {
+    // Moving forward: current distance should decrease
+    targetDist = distance - cm;
     digitalWrite(Motor_L_dir_pin, Motor_forward);
     digitalWrite(Motor_R_dir_pin, Motor_forward);
   } else {
+    // Moving backward: current distance should increase
+    targetDist = distance - cm;  // Note: -cm makes it positive
     digitalWrite(Motor_L_dir_pin, Motor_return);
     digitalWrite(Motor_R_dir_pin, Motor_return);
   }
-  analogWrite(Motor_L_pwm_pin, pwmValue);
-  analogWrite(Motor_R_pwm_pin, pwmValue);
-  while (pulseCountR < targetPulses) {
-    // waiting to reach the target distance
+  
+  // Continue moving until we reach target distance
+  while (true) {
+    distance = get_dist();
+    
+    // Check if we've reached target
+    if (cm > 0 && distance <= targetDist) break;
+    if (cm < 0 && distance >= targetDist) break; 
+    
+    // Emergency stop if obstacle is too close
+    if (distance < 10) {
+      stopMotors();
+      Serial.println("Emergency stop - obstacle detected");
+      Serial1.println("EMERGENCY-STOP");
+      return;
+    }
+    
+    // Adjust speed based on obstacle proximity
+    int adjustedSpeed;
+    if (distance < 30) {
+      // Slow speed (30%) when obstacles are nearby
+      adjustedSpeed = map(30, 0, 100, 0, 255);
+      Serial.println("Obstacle nearby - reducing speed");
+      Serial1.println("WARNING");
+    } else {
+      // Fast speed (70%) when path is clear
+      adjustedSpeed = map(70, 0, 100, 0, 255);
+    }
+    
+    // Apply the adjusted speed
+    analogWrite(Motor_L_pwm_pin, adjustedSpeed);
+    analogWrite(Motor_R_pwm_pin, adjustedSpeed);
+    
+    // Small delay to allow for LIDAR readings to update
+    delay(50);
   }
+  
   stopMotors();
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-void getEEPROM(){
-  uint8_t retrievedValue = EEPROM.read(0);
-  double distPerPulse = retrievedValue / 100.0; // Convert back to double
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("EEPROM val: ");
-  lcd.print(distPerPulse);
-}
-
-void calibrate() {
-  int initDist = get_dist();
-  pulseCountR = 0;
-  pulseCountL = 0;
-  int finalDist = initDist;  
-
-  // Drive until we have traveled 20cm
-  while (abs(initDist - finalDist) < 20) { 
-    drive(30, true);
-    finalDist = get_dist();
-  }
-  stopMotors();
-
-  Serial.println("### calibration results ###");
-  Serial.print("dist travelled: ");
-  Serial.println(abs(initDist - finalDist));
-  Serial.print("pulse counts: ");
-  Serial.print(pulseCountR);
-  Serial.print("|");
-  Serial.println(pulseCountL);
-
-  double distPerPulse = 0.0;
-  if (pulseCountR > 0) { // Prevent division by zero
-    distPerPulse = (double)(abs(initDist - finalDist)) / pulseCountR;
-  }
-
-  Serial.print("dist per pulse: ");
-  Serial.println(distPerPulse);
-  Serial.println("### end of results ###");
-
-  lcd.clear();
-  lcd.setCursor(0, 0);
-  lcd.print("dist: ");
-  lcd.print(abs(initDist - finalDist));
-  lcd.setCursor(0, 1);
-  lcd.print("pls cnt: ");
-  lcd.print(pulseCountR);
-  lcd.print("|");
-  lcd.print(pulseCountL);
-  lcd.setCursor(0, 2);
-  lcd.print("distPerPulse: ");
-  lcd.print(distPerPulse);
-
-  // Store to EEPROM
-  uint8_t scaledValue = round(distPerPulse * 100);
-  EEPROM.update(0, scaledValue);
-  lcd.setCursor(0, 3);
-  lcd.print("EEPROM val updated");
 }
 
 int get_dist() {

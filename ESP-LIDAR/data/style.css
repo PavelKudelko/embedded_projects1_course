@@ -1,4 +1,4 @@
-html { 
+html {
   font-family: Helvetica;	/* The text will be in a nice, clean font called Helvetica */
   display: flex;			/* We make everything flexible, like stretching playdough */
   justify-content: left;	/* All the stuff inside will be pushed to the left side */
@@ -17,7 +17,7 @@ html {
   margin-top: 20px;			/* Move the container down a little from the top */
 }
 
-.button { 
+.button {
   user-select: none;		/* You can't accidentally select the button with your mouse */
   background-color: #46ff46;/* The button will be green */
   border: none;				/* No border around the button */
@@ -71,4 +71,16 @@ html {
   margin-left: 5px;			/* Leave a tiny bit of space on the left of the number */
   width: 100%;				/* The box for the number will be as wide as the whole screen */
   text-align: center;		/* The number will be in the middle */
+}
+
+.warning-message {
+  display: none;  /* Hidden by default */
+  background-color: #ffebee;
+  color: #c62828;
+  padding: 15px;
+  border-radius: 5px;
+  margin: 10px 0;
+  border: 1px solid #ef9a9a;
+  font-weight: bold;
+  text-align: center;
 }
