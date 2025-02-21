@@ -122,7 +122,7 @@ void handleCompassValue() {
 }
 
 void handleWarning() {
-  server.send(200, "text/plain", isWarning);
+  server.send(200, "text/plain", isWarning ? "true" : "false");
 }
 
 //void handleCantMove() {
