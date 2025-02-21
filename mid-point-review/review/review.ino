@@ -151,9 +151,14 @@ void loop() {
     stopMotors();
     buttonPressed = false;
   }
-  Serial1.println("LIDAR:" + String(get_dist()));
+  int distance = get_dist();
+  Serial1.println("LIDAR:" + String(distance));
   Serial1.println("COMPASS:" + String(getCorrectedCompassBearing()));
-  delay(70); // Delay to control update frequency
+
+  if (distance <= 10) {
+    Serial1.println("WARNING");
+  }
+  delay(80); // Delay to control update frequency
 }
 
 void displayLidarValues() {
@@ -273,6 +278,8 @@ void move(int cm, int speedPercent) {
   if (distance < 10) {
     int rotations = 0;
     bool clearPathFound = false;
+
+    Serial1.println("WARNING");
     
     // Try up to 4 times
     while (rotations < 4 && !clearPathFound) {
@@ -288,8 +295,11 @@ void move(int cm, int speedPercent) {
     
     if (!clearPathFound) {
       Serial.println("Surrounded by obstacles - cannot move");
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Surrounded by obstacles - cannot move");
       // send message to esp
-      Serial1.println("CANT-MOVE");
+      //Serial1.println("CANT-MOVE");
       return;
     }
   }
@@ -323,7 +333,7 @@ void move(int cm, int speedPercent) {
     if (distance < 10) {
       stopMotors();
       Serial.println("Emergency stop - obstacle detected");
-      Serial1.println("EMERGENCY-STOP");
+      // Serial1.println("EMERGENCY-STOP");
       return;
     }
     
@@ -333,7 +343,9 @@ void move(int cm, int speedPercent) {
       // Slow speed (30%) when obstacles are nearby
       adjustedSpeed = map(30, 0, 100, 0, 255);
       Serial.println("Obstacle nearby - reducing speed");
-      Serial1.println("WARNING");
+      if (distance <= 10) {
+        Serial1.println("WARNING");
+      }
     } else {
       // Fast speed (70%) when path is clear
       adjustedSpeed = map(70, 0, 100, 0, 255);
