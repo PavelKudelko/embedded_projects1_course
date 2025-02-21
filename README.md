@@ -19,7 +19,7 @@ This repository contains **final project** in `/final_demo` directory for the Em
 - **LCD Communication**: I2C interface for feedback.
 - **Interrupts**: Handling inputs efficiently.
 - **Networking**: ESP8266 for IoT control.
-- **Watchdog Timers**: Ensuring reliable system operation.
+- **Watchdog Timers**: Ensuring reliable system operation..
 
 ### Images
 <img src="media/general_pic.png" alt="Joystick Control" width="400">
