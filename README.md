@@ -1,4 +1,7 @@
 # Embedded projects 1 course
+## PROJECT CONTINUATION
+For the continuation of this project with LIDAR integration and enhanced ESP8266 communication, see:
+[Embedded Projects 2](https://github.com/PavelKudelko/embedded-projects-2)
 ## Overview
 This repository contains **final project** in `/final_demo` directory for the Embedded projects course, showcasing all key topics covered. It includes motor control, joystick navigation, compass-based adjustment, LCD feedback, a watchdog timer, and ESP8266 integration for web-based control.
 ### Key Features
